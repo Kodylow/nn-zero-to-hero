@@ -21,6 +21,7 @@ pub enum Op {
     Add,
     Mul,
     Tanh,
+    Exp,
     None,
 }
 
@@ -30,6 +31,7 @@ impl fmt::Debug for Op {
             Op::Add => write!(f, "+"),
             Op::Mul => write!(f, "*"),
             Op::Tanh => write!(f, "tanh"),
+            Op::Exp => write!(f, "exp"),
             Op::None => write!(f, ""),
         }
     }
@@ -131,6 +133,20 @@ impl ValueGraph {
             grad: MyF64(0.0),
             op: Op::Mul,
             prev: vec![a, b],
+        };
+
+        self.add_value(out)
+    }
+
+    pub fn exp(&mut self, a: usize) -> usize {
+        let a_val = self.get_value(a).expect("Invalid index for 'a'");
+        let out_data = a_val.data.0.exp();
+        let out = Value {
+            label: format!("exp({})", a_val.label),
+            data: MyF64(out_data),
+            grad: MyF64(0.0),
+            op: Op::None,
+            prev: vec![a],
         };
 
         self.add_value(out)
