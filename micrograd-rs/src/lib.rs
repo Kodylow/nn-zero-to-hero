@@ -34,15 +34,15 @@ impl fmt::Debug for Op {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct Value<'a> {
+pub struct Value {
     pub label: String,
     pub data: MyF64,
     pub grad: MyF64,
     pub op: Op,
-    pub prev: Vec<&'a Value<'a>>,
+    pub prev: Vec<usize>,
 }
 
-impl fmt::Debug for Value<'_> {
+impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -52,7 +52,7 @@ impl fmt::Debug for Value<'_> {
     }
 }
 
-impl Default for Value<'_> {
+impl Default for Value {
     fn default() -> Self {
         Value {
             label: String::new(),
@@ -64,14 +64,8 @@ impl Default for Value<'_> {
     }
 }
 
-impl Value<'_> {
-    pub fn new<'a>(
-        label: String,
-        data: MyF64,
-        grad: MyF64,
-        op: Op,
-        prev: Vec<&'a Value<'_>>,
-    ) -> Value<'a> {
+impl Value {
+    pub fn new(label: String, data: MyF64, grad: MyF64, op: Op, prev: Vec<usize>) -> Self {
         Value {
             label,
             data,
@@ -80,91 +74,176 @@ impl Value<'_> {
             prev,
         }
     }
-    pub fn add<'a>(&'a self, other: &'a Value<'a>) -> Value<'a> {
-        let mut out = Value {
-            label: format!("({} + {})", self.label, other.label),
-            data: MyF64(self.data.0 + other.data.0),
-            grad: MyF64(0.0),
-            op: Op::Add,
-            prev: Vec::new(),
-        };
-        out.prev.push(self);
-        out.prev.push(other);
-        out
-    }
-
-    pub fn mul<'a>(&'a self, other: &'a Value<'a>) -> Value<'a> {
-        let mut out = Value {
-            label: format!("({} * {})", self.label, other.label),
-            data: MyF64(self.data.0 * other.data.0),
-            grad: MyF64(0.0),
-            op: Op::Mul,
-            prev: Vec::new(),
-        };
-        out.prev.push(self);
-        out.prev.push(other);
-        out
-    }
 }
 
-pub fn trace<'a>(
-    root: &'a Value<'a>,
-    nodes: &mut HashSet<Value<'a>>,
-    edges: &mut HashSet<(Value<'a>, Value<'a>)>,
-) {
-    if !nodes.contains(root) {
-        nodes.insert(root.clone());
-        for child in &root.prev {
-            edges.insert(((*child).clone(), root.clone()));
-            trace(child, nodes, edges);
+pub struct ValueGraph {
+    values: HashMap<usize, Value>,
+    next_index: usize,
+}
+
+impl ValueGraph {
+    pub fn new() -> Self {
+        ValueGraph {
+            values: HashMap::new(),
+            next_index: 0,
+        }
+    }
+
+    pub fn add_value(&mut self, value: Value) -> usize {
+        let index = self.next_index;
+        self.values.insert(index, value);
+        self.next_index += 1;
+        index
+    }
+
+    pub fn get_value_mut(&mut self, index: usize) -> Option<&mut Value> {
+        self.values.get_mut(&index)
+    }
+
+    pub fn get_value(&self, index: usize) -> Option<&Value> {
+        self.values.get(&index)
+    }
+
+    pub fn add(&mut self, a: usize, b: usize) -> usize {
+        let a_val = self.get_value(a).expect("Invalid index for 'a'");
+        let b_val = self.get_value(b).expect("Invalid index for 'b'");
+
+        let out = Value {
+            label: format!("({} + {})", a_val.label, b_val.label),
+            data: MyF64(a_val.data.0 + b_val.data.0),
+            grad: MyF64(0.0),
+            op: Op::Add,
+            prev: vec![a, b],
+        };
+
+        self.add_value(out)
+    }
+
+    pub fn mul(&mut self, a: usize, b: usize) -> usize {
+        let a_val = self.get_value(a).expect("Invalid index for 'a'");
+        let b_val = self.get_value(b).expect("Invalid index for 'b'");
+
+        let out = Value {
+            label: format!("({} * {})", a_val.label, b_val.label),
+            data: MyF64(a_val.data.0 * b_val.data.0),
+            grad: MyF64(0.0),
+            op: Op::Mul,
+            prev: vec![a, b],
+        };
+
+        self.add_value(out)
+    }
+
+    pub fn backward(&mut self, index: usize) {
+        let mut prev = Vec::new();
+        if let Some(value) = self.get_value_mut(index) {
+            // Initialize gradient if it's the end of the graph
+            if value.prev.is_empty() {
+                value.grad = MyF64(1.0);
+            }
+
+            let grad = value.grad.0;
+            let data = value.data.0;
+            prev = value.prev.clone();
+
+            match value.op {
+                Op::Add => {
+                    for &prev_index in &prev {
+                        if let Some(prev_value) = self.get_value_mut(prev_index) {
+                            prev_value.grad.0 += grad;
+                        }
+                    }
+                }
+                Op::Mul => {
+                    for &prev_index in &prev {
+                        if let Some(prev_value) = self.get_value_mut(prev_index) {
+                            prev_value.grad.0 += grad * (data / prev_value.data.0);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Recurse into previous values
+        for &prev_index in &prev {
+            self.backward(prev_index);
         }
     }
 }
 
-pub fn draw_dot<'a>(root: &'a Value<'a>) -> Graph<String, String> {
-    let mut graph = Graph::<String, String>::new();
+pub fn trace(
+    graph: &ValueGraph,
+    index: usize,
+    nodes: &mut HashSet<usize>,
+    edges: &mut HashSet<(usize, usize)>,
+) {
+    if !nodes.contains(&index) {
+        nodes.insert(index);
+        if let Some(value) = graph.get_value(index) {
+            for &child_index in &value.prev {
+                edges.insert((child_index, index));
+                trace(graph, child_index, nodes, edges);
+            }
+        }
+    }
+}
+
+pub fn draw_dot(graph: &ValueGraph, root_index: usize) -> Graph<String, String> {
+    let mut graph_draw = Graph::<String, String>::new();
     let mut nodes_map = HashMap::new();
     let mut edges_set = HashSet::new();
 
     // Start the recursive visiting process
-    visit(root, &mut graph, &mut nodes_map, &mut edges_set);
+    visit(
+        graph,
+        root_index,
+        &mut graph_draw,
+        &mut nodes_map,
+        &mut edges_set,
+    );
 
-    graph
+    graph_draw
 }
 
 // Function to recursively visit nodes and add them to the graph
-fn visit<'a>(
-    value: &'a Value<'a>,
-    graph: &mut Graph<String, String>,
+fn visit(
+    graph: &ValueGraph,
+    index: usize,
+    graph_draw: &mut Graph<String, String>,
     nodes_map: &mut HashMap<String, NodeIndex>,
     edges_set: &mut HashSet<(String, String)>,
 ) {
-    let value_label = &value.label;
+    if let Some(value) = graph.get_value(index) {
+        let value_label = &value.label;
 
-    if !nodes_map.contains_key(value_label) {
-        let label = match value.op {
-            Op::None => format!(
-                "  {} | data {:.4} | grad {:.4}  ",
-                value.label, value.data.0, value.grad.0
-            ),
-            _ => format!(
-                "  op{:?} | {} | data {:.4} | grad {:.4}  ",
-                value.op, value.label, value.data.0, value.grad.0
-            ),
-        };
-        let index = graph.add_node(label);
-        nodes_map.insert(value_label.clone(), index);
+        if !nodes_map.contains_key(value_label) {
+            let label = match value.op {
+                Op::None => format!(
+                    "  {} | data {:.4} | grad {:.4}  ",
+                    value.label, value.data.0, value.grad.0
+                ),
+                _ => format!(
+                    "  {:?} | {} | data {:.4} | grad {:.4}  ",
+                    value.op, value.label, value.data.0, value.grad.0
+                ),
+            };
+            let node_index = graph_draw.add_node(label);
+            nodes_map.insert(value_label.clone(), node_index);
 
-        for &prev_value in &value.prev {
-            visit(prev_value, graph, nodes_map, edges_set);
-            add_edge_if_not_exists(prev_value, value, graph, nodes_map, edges_set);
+            for &prev_index in &value.prev {
+                if let Some(prev_value) = graph.get_value(prev_index) {
+                    visit(graph, prev_index, graph_draw, nodes_map, edges_set);
+                    add_edge_if_not_exists(prev_value, value, graph_draw, nodes_map, edges_set);
+                }
+            }
         }
     }
 }
 
-fn add_edge_if_not_exists<'a>(
-    prev_value: &'a Value<'a>,
-    value: &'a Value<'a>,
+fn add_edge_if_not_exists(
+    prev_value: &Value,
+    value: &Value,
     graph: &mut Graph<String, String>,
     nodes_map: &mut HashMap<String, NodeIndex>,
     edges_set: &mut HashSet<(String, String)>,

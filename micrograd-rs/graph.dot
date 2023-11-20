@@ -1,7 +1,7 @@
 digraph {
-    0 [ label = "\"  op* | l | data -8.0000 | grad 0.0000  \"" ]
-    1 [ label = "\"  op+ | d | data 4.0000 | grad 0.0000  \"" ]
-    2 [ label = "\"  op* | e | data -6.0000 | grad 0.0000  \"" ]
+    0 [ label = "\"  * | l | data -8.0000 | grad 0.0000  \"" ]
+    1 [ label = "\"  + | d | data 4.0000 | grad 0.0000  \"" ]
+    2 [ label = "\"  * | e | data -6.0000 | grad 0.0000  \"" ]
     3 [ label = "\"  a | data 2.0000 | grad 0.0000  \"" ]
     4 [ label = "\"  b | data -3.0000 | grad 0.0000  \"" ]
     5 [ label = "\"  c | data 10.0000 | grad 0.0000  \"" ]
