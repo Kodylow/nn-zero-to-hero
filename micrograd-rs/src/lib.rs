@@ -163,6 +163,8 @@ impl ValueGraph {
             let data = value.data.0;
             prev = value.prev.clone();
 
+            // Update gradient for previous values based on the operation
+            // Have to accumulate gradients so they don't get overwritten
             match value.op {
                 Op::Add => {
                     for &prev_index in &prev {
