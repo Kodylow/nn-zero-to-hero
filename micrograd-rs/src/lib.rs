@@ -3,7 +3,7 @@ use std::{
     fmt,
 };
 
-use petgraph::Graph;
+use petgraph::{stable_graph::NodeIndex, Graph};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MyF64(pub f64);
@@ -16,16 +16,33 @@ impl std::hash::Hash for MyF64 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub enum Op {
+    Add,
+    Mul,
+    None,
+}
+
+impl fmt::Debug for Op {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Op::Add => write!(f, "+"),
+            Op::Mul => write!(f, "*"),
+            Op::None => write!(f, ""),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Value<'a> {
     pub label: String,
     pub data: MyF64,
     pub grad: MyF64,
-    pub op: String,
+    pub op: Op,
     pub prev: Vec<&'a Value<'a>>,
 }
 
-impl fmt::Display for Value<'_> {
+impl fmt::Debug for Value<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -41,7 +58,7 @@ impl Default for Value<'_> {
             label: String::new(),
             data: MyF64(0.0),
             grad: MyF64(0.0),
-            op: String::new(),
+            op: Op::None,
             prev: Vec::new(),
         }
     }
@@ -52,7 +69,7 @@ impl Value<'_> {
         label: String,
         data: MyF64,
         grad: MyF64,
-        op: String,
+        op: Op,
         prev: Vec<&'a Value<'_>>,
     ) -> Value<'a> {
         Value {
@@ -68,7 +85,7 @@ impl Value<'_> {
             label: format!("({} + {})", self.label, other.label),
             data: MyF64(self.data.0 + other.data.0),
             grad: MyF64(0.0),
-            op: "+".to_string(),
+            op: Op::Add,
             prev: Vec::new(),
         };
         out.prev.push(self);
@@ -81,7 +98,7 @@ impl Value<'_> {
             label: format!("({} * {})", self.label, other.label),
             data: MyF64(self.data.0 * other.data.0),
             grad: MyF64(0.0),
-            op: "*".to_string(),
+            op: Op::Mul,
             prev: Vec::new(),
         };
         out.prev.push(self);
@@ -104,32 +121,61 @@ pub fn trace<'a>(
     }
 }
 
-pub fn draw_dot<'a>(root: &'a Value<'_>) -> Graph<Value<'a>, String> {
-    let mut nodes = HashSet::new();
-    let mut edges = HashSet::new();
-    trace(root, &mut nodes, &mut edges);
+pub fn draw_dot<'a>(root: &'a Value<'a>) -> Graph<String, String> {
+    let mut graph = Graph::<String, String>::new();
+    let mut nodes_map = HashMap::new();
+    let mut edges_set = HashSet::new();
 
-    let mut graph = Graph::<Value, String>::new();
-    let mut index_map = HashMap::new();
-
-    for node in nodes {
-        let index = graph.add_node(node.clone());
-        let node_clone = node.clone();
-        index_map.insert(node, index);
-        if !node_clone.op.is_empty() {
-            let op_index = graph.add_node(Value {
-                label: node_clone.op.clone(),
-                ..Default::default()
-            });
-            graph.add_edge(op_index, index, "".to_string());
-        }
-    }
-
-    for (n1, n2) in edges {
-        if let (Some(&index1), Some(&index2)) = (index_map.get(&n1), index_map.get(&n2)) {
-            graph.add_edge(index1, index2, n2.op);
-        }
-    }
+    // Start the recursive visiting process
+    visit(root, &mut graph, &mut nodes_map, &mut edges_set);
 
     graph
+}
+
+// Function to recursively visit nodes and add them to the graph
+fn visit<'a>(
+    value: &'a Value<'a>,
+    graph: &mut Graph<String, String>,
+    nodes_map: &mut HashMap<String, NodeIndex>,
+    edges_set: &mut HashSet<(String, String)>,
+) {
+    let value_label = &value.label;
+
+    if !nodes_map.contains_key(value_label) {
+        let label = match value.op {
+            Op::None => format!(
+                "  {} | data {:.4} | grad {:.4}  ",
+                value.label, value.data.0, value.grad.0
+            ),
+            _ => format!(
+                "  op{:?} | {} | data {:.4} | grad {:.4}  ",
+                value.op, value.label, value.data.0, value.grad.0
+            ),
+        };
+        let index = graph.add_node(label);
+        nodes_map.insert(value_label.clone(), index);
+
+        for &prev_value in &value.prev {
+            visit(prev_value, graph, nodes_map, edges_set);
+            add_edge_if_not_exists(prev_value, value, graph, nodes_map, edges_set);
+        }
+    }
+}
+
+fn add_edge_if_not_exists<'a>(
+    prev_value: &'a Value<'a>,
+    value: &'a Value<'a>,
+    graph: &mut Graph<String, String>,
+    nodes_map: &mut HashMap<String, NodeIndex>,
+    edges_set: &mut HashSet<(String, String)>,
+) {
+    let prev_label = &prev_value.label;
+    let value_label = &value.label;
+
+    // Avoid adding duplicate edges
+    if !edges_set.contains(&(prev_label.clone(), value_label.clone())) {
+        let prev_index = *nodes_map.get(prev_label).unwrap();
+        graph.add_edge(prev_index, nodes_map[value_label], "".to_string());
+        edges_set.insert((prev_label.clone(), value_label.clone()));
+    }
 }

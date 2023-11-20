@@ -1,37 +1,37 @@
 use std::fs::File;
 
-use micrograd_rs::{draw_dot, MyF64, Value};
+use micrograd_rs::{draw_dot, MyF64, Op, Value};
 use petgraph::dot::{Config, Dot};
 use std::io::Write;
 use std::process::Command;
 
 fn main() {
-    let h = Value::new(
+    let _h = Value::new(
         "h".to_string(),
         MyF64(0.0001),
         MyF64(0.0),
-        "".to_string(),
+        Op::None,
         Vec::new(),
     );
     let a = Value::new(
         "a".to_string(),
         MyF64(2.0),
         MyF64(0.0),
-        "".to_string(),
+        Op::None,
         Vec::new(),
     );
     let b = Value::new(
         "b".to_string(),
         MyF64(-3.0),
         MyF64(0.0),
-        "".to_string(),
+        Op::None,
         Vec::new(),
     );
     let c = Value::new(
         "c".to_string(),
         MyF64(10.0),
         MyF64(0.0),
-        "".to_string(),
+        Op::None,
         Vec::new(),
     );
     let mut e = a.mul(&b);
@@ -43,7 +43,7 @@ fn main() {
         "f".to_string(),
         MyF64(-2.0),
         MyF64(0.0),
-        "".to_string(),
+        Op::None,
         Vec::new(),
     );
 
