@@ -19,7 +19,9 @@ impl std::hash::Hash for MyF64 {
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Op {
     Add,
+    Sub,
     Mul,
+    Pow,
     Tanh,
     Exp,
     None,
@@ -29,7 +31,9 @@ impl fmt::Debug for Op {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Op::Add => write!(f, "+"),
+            Op::Sub => write!(f, "-"),
             Op::Mul => write!(f, "*"),
+            Op::Pow => write!(f, "^"),
             Op::Tanh => write!(f, "tanh"),
             Op::Exp => write!(f, "exp"),
             Op::None => write!(f, ""),
@@ -123,6 +127,21 @@ impl ValueGraph {
         self.add_value(out)
     }
 
+    pub fn sub(&mut self, a: usize, b: usize) -> usize {
+        let a_val = self.get_value(a).expect("Invalid index for 'a'");
+        let b_val = self.get_value(b).expect("Invalid index for 'b'");
+
+        let out = Value {
+            label: format!("({} - {})", a_val.label, b_val.label),
+            data: MyF64(a_val.data.0 - b_val.data.0),
+            grad: MyF64(0.0),
+            op: Op::Add,
+            prev: vec![a, b],
+        };
+
+        self.add_value(out)
+    }
+
     pub fn mul(&mut self, a: usize, b: usize) -> usize {
         let a_val = self.get_value(a).expect("Invalid index for 'a'");
         let b_val = self.get_value(b).expect("Invalid index for 'b'");
@@ -147,6 +166,21 @@ impl ValueGraph {
             grad: MyF64(0.0),
             op: Op::None,
             prev: vec![a],
+        };
+
+        self.add_value(out)
+    }
+
+    pub fn pow(&mut self, a: usize, b: usize) -> usize {
+        let a_val = self.get_value(a).expect("Invalid index for 'a'");
+        let b_val = self.get_value(b).expect("Invalid index for 'b'");
+        let out_data = a_val.data.0.powf(b_val.data.0);
+        let out = Value {
+            label: format!("({} ^ {})", a_val.label, b_val.label),
+            data: MyF64(out_data),
+            grad: MyF64(0.0),
+            op: Op::None,
+            prev: vec![a, b],
         };
 
         self.add_value(out)
@@ -189,10 +223,24 @@ impl ValueGraph {
                         }
                     }
                 }
+                Op::Sub => {
+                    for &prev_index in &prev {
+                        if let Some(prev_value) = self.get_value_mut(prev_index) {
+                            prev_value.grad.0 -= grad;
+                        }
+                    }
+                }
                 Op::Mul => {
                     for &prev_index in &prev {
                         if let Some(prev_value) = self.get_value_mut(prev_index) {
                             prev_value.grad.0 += grad * (data / prev_value.data.0);
+                        }
+                    }
+                }
+                Op::Pow => {
+                    for &prev_index in &prev {
+                        if let Some(prev_value) = self.get_value_mut(prev_index) {
+                            prev_value.grad.0 += grad * data * prev_value.data.0.powf(data - 1.0);
                         }
                     }
                 }
@@ -203,7 +251,14 @@ impl ValueGraph {
                         }
                     }
                 }
-                _ => {}
+                Op::Exp => {
+                    for &prev_index in &prev {
+                        if let Some(prev_value) = self.get_value_mut(prev_index) {
+                            prev_value.grad.0 += grad * data.exp();
+                        }
+                    }
+                }
+                Op::None => {}
             }
         }
 
