@@ -20,6 +20,7 @@ impl std::hash::Hash for MyF64 {
 pub enum Op {
     Add,
     Mul,
+    Tanh,
     None,
 }
 
@@ -28,6 +29,7 @@ impl fmt::Debug for Op {
         match self {
             Op::Add => write!(f, "+"),
             Op::Mul => write!(f, "*"),
+            Op::Tanh => write!(f, "tanh"),
             Op::None => write!(f, ""),
         }
     }
@@ -134,6 +136,21 @@ impl ValueGraph {
         self.add_value(out)
     }
 
+    pub fn tanh(&mut self, a: usize) -> usize {
+        let a_val = self.get_value(a).expect("Invalid index for 'a'");
+        let t = (2.0 * a_val.data.0).exp();
+        let out_data = (t - 1.0) / (t + 1.0);
+        let out = Value {
+            label: format!("tanh({})", a_val.label),
+            data: MyF64(out_data),
+            grad: MyF64(0.0),
+            op: Op::Tanh,
+            prev: vec![a],
+        };
+
+        self.add_value(out)
+    }
+
     pub fn backward(&mut self, index: usize) {
         let mut prev = Vec::new();
         if let Some(value) = self.get_value_mut(index) {
@@ -158,6 +175,13 @@ impl ValueGraph {
                     for &prev_index in &prev {
                         if let Some(prev_value) = self.get_value_mut(prev_index) {
                             prev_value.grad.0 += grad * (data / prev_value.data.0);
+                        }
+                    }
+                }
+                Op::Tanh => {
+                    for &prev_index in &prev {
+                        if let Some(prev_value) = self.get_value_mut(prev_index) {
+                            prev_value.grad.0 += grad * (1.0 - data.powi(2));
                         }
                     }
                 }
